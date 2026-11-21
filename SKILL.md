@@ -1,7 +1,7 @@
 ---
 name: ci-speed-audit
 description: 在不掩盖失败或减少校验的前提下审计并系统提速仓库 CI（目标 PR p50 <1m、p95 <2m），覆盖跨平台三桶耗时审计、runner/缓存/并行拓扑/shard 分片调优、PR 可达测试筛选，以及多语言高速工具链与 JS/TS Bun 默认栈迁移。
-version: "0.4.1"
+version: "0.4.2"
 ---
 
 # CI 提速与诚实加速（CI Speed Audit）
@@ -23,19 +23,20 @@ version: "0.4.1"
 
 - 目标仓库的 CI 历史运行数据读取权限（优先拉取最近 150 次运行，拆分 `waiting` / `setup` / `running`；若历史运行不足 150 次，按 [references/platform-adapters.md](references/platform-adapters.md) 的降级路径处理）。
 - 仓库内的 CI workflow / pipeline 配置、包管理与脚本定义、测试及 linter/formatter/typechecker 配置文件。
-- **先做完无需用户介入的全部改动**：任何涉及外部账号、Secret、付费 runner 或预算的项（如 Blacksmith runners、warm machines）不得阻塞前期优化；先交付仓库内可落地的改动，再把需人工批准的外部项连同预估月度成本一并列出。
-- 切换工具链前确认当前环境可安装目标工具版本（如 JS/TS 栈目标 Bun exact canary 版本），并能与旧工具并行比对。
+- **先做完无需用户介入的全部改动**：任何涉及外部账号、Secret、付费 runner 或预算的项（如 Blacksmith runners、warm machines；已有自建 runner 时优先加实例）不得阻塞前期优化；先交付仓库内可落地的改动，再把需人工批准的外部项连同预估月度成本一并列出。
+- 切换工具链前确认当前环境可安装目标工具版本，并逐条确认要用的子命令在锁定版本中真实存在（如 `bun <cmd> --help` 返回成功）；能与旧工具并行比对。命令不存在时保留旧工具，不算违规。
 
 ## Procedure
 
-### 1. 锁定不可违背的三条铁律与总目标
+### 1. 锁定不可违背的三条铁律，再定速度目标
 
-先在方案和 PR 说明中明确以下硬边界（均高于速度本身）：
+先在方案和 PR 说明中明确以下三条硬边界（均高于速度本身）：
 
-1. **合入前全量兜底**：任何改动进入主干（`main`）前必须在 Merge Queue（或等价主干合并门禁，如 GitLab Merge Trains，见 `references/platform-adapters.md`）中跑完全量测试套件；PR 级别的测试筛选只用于缩短 PR 反馈时间。
+1. **合入前全量兜底**：任何改动进入主干（`main`）前必须在 Merge Queue（或等价主干合并门禁，如 GitLab Merge Trains，见 `references/platform-adapters.md`）中跑完全量测试套件；PR 级别的测试筛选只用于缩短 PR 反馈时间。**没有 merge queue 或等价门禁时**（如 GitHub 个人账号仓库，merge queue 仅对组织仓库开放），改用「必需检查 + 要求分支基于最新 `main`」，且**禁止 PR 测试筛选**：此时 PR 运行即合入前最后一次校验，必须跑全量。
 2. **绝不掩盖失败**：禁止添加重试（retries）、放宽超时（wider timeouts）或跳过测试（skipped tests）。
 3. **绝不减少校验**：不能通过关掉规则或删掉必要校验来降耗时。
-4. **速度目标**：PR 获取结果 **p50 < 1 分钟**，**p95 < 2 分钟**；任何 job 超预算必须直接失败（fail any job exceeding budget）。
+
+速度目标（低于上述三条）：PR 获取结果 **p50 < 1 分钟**，**p95 < 2 分钟**；任何 job 超预算必须直接失败（fail any job exceeding budget）。编译型或带数据库的大型测试套件在不减少校验时物理上不可达的，按 `references/budgets-and-checklist.md` 的预算重定规则重定端到端目标。
 
 ### 2. 审计最近 150 次 CI 运行，先治最大耗时桶
 
@@ -50,7 +51,7 @@ version: "0.4.1"
 | 维度 | 指标与判定口径 | 核心手段（通用方法 + 默认栈） |
 | :--- | :--- | :--- |
 | PR 端到端 | p50 `< 1m`、p95 `< 2m`（唯一端到端 PASS 标准） | 全链路各桶达标后的综合结果，非独立硬门禁 |
-| Waiting | `< 5s`（分位诊断目标） | 低排队温机池（默认 Blacksmith runners / warm machines，备选见 `budgets-and-checklist.md`）、取消被新提交取代的运行（cancel superseded runs，跨平台写法见 `platform-adapters.md`） |
+| Waiting | `< 5s`（分位诊断目标） | 低排队温机池（已有自建 runner 或以省钱为目标时，默认给自建常驻 runner 加实例；否则默认 Blacksmith runners / warm machines，备选见 `budgets-and-checklist.md`）、取消被新提交取代的运行（cancel superseded runs，跨平台写法见 `platform-adapters.md`） |
 | Setup | `< 15s`（分位诊断目标） | 预构建工具链（baked toolchain）、由 `main` 预热的 PR 缓存（缓存命中率 `> 95%`）、缓存依赖目录（JS/TS 为 `node_modules`）、blobless clone（超大 monorepo 补 `sparse-checkout`） |
 | Job 拓扑 | 最慢 job `< 35s`（硬门禁） | `lint` / `typecheck` / `build` / `tests` 全部并行；无任何必需 job 等待另一个 job；把零散小校验合并到一个 job |
 | Lint | `< 1s`（硬门禁） | 高速 linter（JS/TS 默认 `bun lint` 读 `.oxlintrc.json`；其他语言见 `stack-profiles.md`） |
@@ -63,7 +64,7 @@ version: "0.4.1"
 
 按以下顺序推进具体落地：
 
-1. **收敛依赖与工具链**：按目标语言选定默认高速工具链并锁定精确版本（JS/TS 默认收敛到 `bun` exact canary，side-by-side 校验通过后删除 `npm` / `yarn` / `pnpm` / `Prettier` / `ESLint` / `oxlint` / `Vitest` / `Jest`，但保留 `.oxlintrc.json`；完整迁移细则与 Go / Rust / Python / JVM 对照见 [references/stack-profiles.md](references/stack-profiles.md)）。
+1. **收敛依赖与工具链**：按目标语言选定默认高速工具链并锁定精确版本（JS/TS 默认收敛到 `bun` 精确版本，优先稳定版，仅在所需能力只存在于 canary 时锁定精确 canary；side-by-side 校验通过后删除 `npm` / `yarn` / `pnpm` / `Prettier` / `ESLint` / `oxlint` / `Vitest` / `Jest`，但保留 `.oxlintrc.json`；完整迁移细则与 Go / Rust / Python / JVM 对照见 [references/stack-profiles.md](references/stack-profiles.md)）。
 2. **并行与 shard 分片扩展测试**：
    - 先买更多 CPU 核心再做 shard 分片（buy cores before shards），worker 数与核心数匹配。
    - 每个 shard 使用独立一次性数据库（throwaway DB per shard）。
@@ -72,13 +73,13 @@ version: "0.4.1"
    - 增加完整性校验，**证明所有测试文件都实际执行过**（prove all files ran）。
 3. **PR 可达测试筛选（PR selection）**：
    - 仅运行本次改动可达的测试（按仓库形态选用可信依赖图并沿**反向依赖传递**覆盖下游，禁止拍脑袋路径正则，无法建可信图时回退跑全量 + shard 控时，选型表见 `budgets-and-checklist.md`）；显式列出触发「全量重跑」的全局输入清单（rerun-everything inputs）。
-   - 保持 merge queue（或等价主干门禁）始终执行全量套件。
+   - 保持 merge queue（或等价主干门禁）始终执行全量套件。**没有这类门禁时不得启用 PR 筛选**（见铁律 1）。
 4. **测试治理（两周观测 / 历史回溯）**：
-   - 优先回溯近 14 天已有 CI 失败记录；若无历史记录，再连续两周记录测试失败日志（log test failures for two weeks），严禁无证据凭直觉删测试。
-   - 删除只充当“改动探测器”的脆弱测试（change-detector-only tests），并在仓库 `AGENTS.md` 中明令禁止此类写法。
+   - 优先回溯近 14 天已有 CI 失败记录；若无历史记录，再连续两周记录测试失败日志（log test failures for two weeks；记录位置与方法见 `budgets-and-checklist.md` 第 G 节），严禁无证据凭直觉删测试。
+   - 识别只充当“改动探测器”的脆弱测试（change-detector-only tests），**先把待删清单（测试名、失败证据、判定理由）交给用户确认**，获批后再在独立小 PR 中删除，并在仓库 `AGENTS.md` 中明令禁止此类写法。
    - **绝对禁止删除**认证/鉴权（auth）、隐私（privacy）、数据迁移（migration）与并发（concurrency）测试。
 5. **本地 Git 钩子**：默认 `hk`（已有且 `< 9s` 的 `lefthook` / `husky` / `pre-commit` 可沿用）；`pre-commit` 对暂存文件跑 fmt + lint，`pre-push` 跑与 CI 一致的校验，总耗时 `< 9s`（通过 git hook 强制执行，而非只写进 `AGENTS.md`）。
-6. **硬门禁**：为各 job 写入单次执行预算阈值（默认阈值或经实测重定后的仓库阈值），job 超预算即硬门禁 FAIL（fail any job exceeding budget），防止性能回归；同时用最近 150 次运行固化回归基线（方法见 `references/jobs-shards-baseline.md` 第 3 节）。
+6. **硬门禁**：为各 job 写入单次执行预算阈值（默认阈值或经实测重定后的仓库阈值），job 超预算即硬门禁 FAIL（fail any job exceeding budget），防止性能回归。计时只算该步骤自身执行时长，不含排队、等锁与 runner 分配；阈值必须在同规格 runner 上实测得出。共享或自托管机器上同一 commit 时红时绿时，先隔离测量环境（独占 runner、固定 CPU 配额），不得靠重跑或放宽阈值消除；同时用最近 150 次运行固化回归基线（方法见 `references/jobs-shards-baseline.md` 第 3 节）。
 
 ### 4. 小 PR 渐进交付、先做自助项、给回退与成本账本
 
@@ -121,7 +122,9 @@ version: "0.4.1"
 - **未做 side-by-side 比对就切工具**：直接替换 linter/typechecker/test runner 可能导致规则漏报或语义偏移；必须新旧并跑核对差异后再删旧工具，且若保留旧工具需给出实测依据。
 - **先做 shard 分片后加核**：单机核数不足时盲目拆大量 shard 会成倍放大 `setup` 成本；应先加核并让 worker 数匹配核数，再按录制文件耗时均衡 shard 分片（方法见 `references/jobs-shards-baseline.md`）。
 - **shard 分片漏跑与筛选漏测**：未校验「所有文件已运行」可能静默漏掉新增测试；PR 测试筛选若漏列全局配置/依赖等 rerun-everything 输入，会让破坏性改动以 PASS 放行（漏测假绿）。
-- **误删高价值测试**：清理 change-detector 测试时若波及 auth / privacy / migration / concurrency，会引入高危回归风险。
+- **误删高价值测试**：清理 change-detector 测试时若波及 auth / privacy / migration / concurrency，会引入高危回归风险；任何删测试都须用户先确认清单。
+- **无 merge queue 仍做 PR 筛选**：个人账号仓库没有 merge queue，此时 PR 筛选等于合入前减少校验，直接违反铁律 3。
+- **墙钟硬门禁受噪声干扰**：在共享/自托管机器上把排队、等锁计入单步耗时，会让硬门禁时红时绿；只计步骤自身时长并隔离测量环境。
 - **卡在外部审批不动**：在拿到付费温机池（如 Blacksmith）账号或新预算前停滞不前会拖延收益；应先交付所有不依赖外部审批的提速 PR。
 
 ## Verification

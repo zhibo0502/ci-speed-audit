@@ -10,7 +10,8 @@
 
 针对 JavaScript / TypeScript 仓库，以下配置为默认目标，除非实测证明旧工具更快或存在不可替代的校验能力：
 
-- [ ] **包管理与脚本**：安装与脚本全部统一为 `bun`；若所需能力仅存在于 canary，**锁定精确 canary 版本**（pin exact canaries），避免漂移。
+- [ ] **包管理与脚本**：安装与脚本全部统一为 `bun`，优先锁定精确稳定版；若所需能力仅存在于 canary，**锁定精确 canary 版本**（pin exact canaries），避免漂移。
+- [ ] **先确认命令存在**：下文 `bun lint` / `bun fmt` / `bun check` 等子命令迁移前须在锁定版本上逐条执行 `--help` 确认存在；不存在的项保留现有工具（ESLint / Prettier / tsc 等），不删除，不算违规。
 - [ ] **依赖缓存**：在 CI 中显式缓存 `node_modules` 与 `~/.bun/install/cache`，由 `main` 分支预热，使 PR 缓存命中率 `> 95%`。
 - [ ] **Lint（`< 1s`）**：使用 `bun lint`，直接读取仓库现有的 `.oxlintrc.json`，尽量开启全部有效规则。
 - [ ] **Format（`< 1s`）**：使用 `bun fmt`。
