@@ -33,15 +33,16 @@
 把整个目录放进目标机器的 Agent skills 目录即可，不需要任何运行时依赖：
 
 ```bash
-# macOS / Linux（Cindy、Claude Code、Codex 通用的 skills 目录）
-# 把下面的 <repo-url> 替换为 GitHub 仓库页上的 clone 地址
-git clone <repo-url> ~/.agents/skills/ci-speed-audit
+# Claude Code（只读取 ~/.claude/skills）
+git clone https://github.com/zhibo0502/ci-speed-audit ~/.claude/skills/ci-speed-audit
+
+# Cindy / Codex 等读取 ~/.agents/skills 的 Agent
+git clone https://github.com/zhibo0502/ci-speed-audit ~/.agents/skills/ci-speed-audit
 ```
 
 ```powershell
-# Windows（PowerShell / Git Bash 通用，展开为用户目录）
-# 把下面的 <repo-url> 替换为 GitHub 仓库页上的 clone 地址
-git clone <repo-url> "$env:USERPROFILE\.agents\skills\ci-speed-audit"
+# Windows（PowerShell）。Claude Code 用 .claude\skills，其他 Agent 用 .agents\skills
+git clone https://github.com/zhibo0502/ci-speed-audit "$env:USERPROFILE\.claude\skills\ci-speed-audit"
 ```
 
 ```bash
@@ -140,11 +141,11 @@ git clone <repo-url> "$env:USERPROFILE\.agents\skills\ci-speed-audit"
 
 ```
 ci-speed-audit/
-├── SKILL.md                              # 主入口：铁律、审计流程、预算表、校验清单、参考索引（132 行）
+├── SKILL.md                              # 主入口：铁律、审计流程、预算表、校验清单、参考索引（135 行）
 ├── references/
 │   ├── platform-adapters.md              # 跨 CI 平台原语映射 + 统一拆桶口径 + <150 次降级（38 行）
-│   ├── stack-profiles.md                 # JS/TS Bun+TS7 迁移明细 + Go/Rust/Python/JVM 对照（39 行）
-│   ├── budgets-and-checklist.md          # 逐桶清单、预算重定、PR 筛选依赖图、容器/Matrix、PR 与成本模板（139 行）
+│   ├── stack-profiles.md                 # JS/TS Bun+TS7 迁移明细 + Go/Rust/Python/JVM 对照（40 行）
+│   ├── budgets-and-checklist.md          # 逐桶清单、预算重定、PR 筛选依赖图、容器/Matrix、PR 与成本模板（142 行）
 │   ├── bucket-diagnostics.md             # waiting/setup 定位、传导量化、常见误判（37 行）
 │   └── jobs-shards-baseline.md           # 过大 job 拆分、shard 负载均衡、回归基线（52 行）
 └── README.md                             # 本文件

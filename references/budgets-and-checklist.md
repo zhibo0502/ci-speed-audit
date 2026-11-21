@@ -4,11 +4,13 @@
 
 ## 1. 三条最高铁律（不可妥协）
 
-1. **合入前全量兜底**：合入主干（`main`）前必须在 merge queue（或平台等价主干合并门禁，见 `platform-adapters.md`）运行完整测试套件；PR 测试筛选仅缩小 PR 反馈范围，绝不替代合入前全量套件。
+1. **合入前全量兜底**：合入主干（`main`）前必须在 merge queue（或平台等价主干合并门禁，见 `platform-adapters.md`）运行完整测试套件；PR 测试筛选仅缩小 PR 反馈范围，绝不替代合入前全量套件。没有这类门禁时（如 GitHub 个人账号仓库）用「必需检查 + 分支须基于最新 `main`」代替，并且 PR 必须跑全量、禁止筛选。
 2. **绝不掩盖失败**：禁止引入重试（retries）、放宽超时（wider timeouts）或跳过测试（skipped tests）。
 3. **绝不减少校验**：不删减必要 lint/typecheck/build/test 覆盖面以换取耗时下降。
 
 ## 2. 全链路预算目标与治理清单
+
+> 计时口径：硬门禁只计该步骤自身执行时长，不含排队、等锁、runner 分配；阈值在同规格 runner 上实测得出。共享或自托管机器出现同一 commit 时红时绿，先隔离测量环境（独占 runner、固定 CPU 配额），不得重跑或放宽阈值。
 
 > 原则：先审计最近 **150 次** CI 运行（不足 150 次按 `platform-adapters.md` 降级采样），按 `waiting` / `setup` / `running` 拆出 p50 与 p95，**从最大桶开始优化**；硬门禁仅限单次 CI job 执行预算（lint / fmt / check / 单 shard / 最慢 job），**越线即直接判红 FAIL**；`waiting` / `setup` / 缓存命中率为分位诊断目标，本地钩子为本地性能目标，均不做单次判红。
 
@@ -18,10 +20,10 @@
 
 1. **先优化再重定**：必须先完成缓存预热、工具链迁移、并行拓扑与加核/分片；**禁止**对着未优化的慢基线直接放宽预算。
 2. **附物理下界证据**：记录该步在热缓存与冷缓存下的实测下界（p50 / p95）及具体物理瓶颈（如全仓链接或不可拆分的类型图大小）。
-3. **固化为新硬门禁**：以 `优化后热基线 p95 × 1.2`（向上取整）作为该仓库的新硬门禁写入 CI 预算脚本与回归基线快照；重定后单次超线仍**必须直接判红 FAIL**，且端到端目标优先仍维持 p50 `< 1m` / p95 `< 2m`（靠并行与分片消化）。注：`waiting < 5s` / `setup < 15s` 为分位诊断目标，按分位基线诊断，**不转为单次判红硬门禁**。
+3. **固化为新硬门禁**：以 `优化后热基线 p95 × 1.2`（向上取整）作为该仓库的新硬门禁写入 CI 预算脚本与回归基线快照；重定后单次超线仍**必须直接判红 FAIL**，端到端目标默认仍为 p50 `< 1m` / p95 `< 2m`（靠并行与分片消化）；若加核、分片、独立数据库都已做完仍物理不可达，端到端目标同样按本规则第 1–3 步重定（`优化后热基线 × 1.2`），并在报告中写明物理瓶颈，不得以减少校验换取达标。注：`waiting < 5s` / `setup < 15s` 为分位诊断目标，按分位基线诊断，**不转为单次判红硬门禁**。
 
 ### A. Waiting（分位诊断目标 `< 5s`）
-- [ ] 评估并迁移至低排队温机池：**默认 Blacksmith runners / warm machines**；等价备选包括 BuildJet、Namespace、Depot 或自建常驻温机池（跨平台方案见 `platform-adapters.md`）。
+- [ ] 评估低排队温机池：**仓库已用自建 runner 或用户以节省 CI 费用为目标时，默认给自建常驻 runner 加实例**（同机多实例或加机器）；否则默认 Blacksmith runners / warm machines；等价备选包括 BuildJet、Namespace、Depot（跨平台方案见 `platform-adapters.md`）。
 - [ ] 配置并发策略，自动取消同一 PR/分支上被新提交取代的旧运行（cancel superseded runs）。
 
 ### B. Setup（分位诊断目标 `< 15s`）
@@ -38,7 +40,7 @@
 ### D. 工具链收敛与迁移（默认按语言栈选型）
 > 所有工具均为默认选型：若保留旧工具，必须提供**实测理由**；切换前必须**新旧并行运行（side by side）**校验结果一致。JS/TS 默认 Bun + TypeScript 7 完整迁移清单，以及 Go / Rust / Python / JVM 等价工具链对照详见 [stack-profiles.md](stack-profiles.md)。
 
-- [ ] 包管理与脚本收敛到目标语言高速默认工具并锁定精确版本（JS/TS 为 `bun` exact canary）。
+- [ ] 包管理与脚本收敛到目标语言高速默认工具并锁定精确版本（JS/TS 为 `bun`，优先稳定版；所需能力仅在 canary 时才锁定精确 canary）。迁移前逐条确认要用的子命令在锁定版本中存在，不存在则保留旧工具。
 - [ ] Lint（`< 1s`）、Format（`< 1s`）、Typecheck / Build（`< 5s`）、Tests（`< 30s / shard`，模块级/文件级隔离、状态重置、随机顺序）逐项达到硬门禁。
 - [ ] Side-by-side 校验通过后，清理并删除被替代的旧工具与冗余配置（JS/TS 删除 `oxlint` 依赖时保留 `.oxlintrc.json`）。
 
@@ -65,13 +67,14 @@
 | **Rust** | `cargo metadata` workspace crate 依赖图（配合 `cargo nextest` 跑受影响 crate 及下游） |
 | **Java / JVM** | Gradle / Maven 模块依赖图（受影响模块及下游模块），或静态 class / import 依赖图 |
 
+- [ ] **前提**：存在 merge queue 或等价主干全量门禁；没有时跳过本节，PR 跑全量。
 - [ ] **降级底线**：若仓库存在大量动态反射/隐式字符串路由导致无法建立可信依赖图，**回退为 PR 跑全量测试**，改靠加核 + 均衡 shard 达标，绝不用不可靠筛选换速度。
 - [ ] 显式维护「触发全量重跑」的全局输入清单（rerun-everything inputs：CI workflow 配置、依赖锁文件、全局测试 harness、编译/运行时配置、数据库 migration、公共环境变量/feature-flag schema 等）。
 - [ ] **诚实性红灯校验**：故意隐藏/制造一处真实破坏性改动，校验筛选逻辑确实命中并让 CI 判红 FAIL（verify by hiding a real change and confirming red）。
 
 ### G. 测试卫生治理（两周观测 / 历史回溯）
-- [ ] **优先回溯近 14 天已有 CI 失败记录**进行归类（caught regression vs change detector）；若仓库缺少可回溯的历史失败日志，再开启连续 **2 周** 记录（log test failures for two weeks）。严禁在缺乏失败证据时凭直觉直接删测试。
-- [ ] 识别并删除只充当“改动探测器”的脆弱测试（change-detector-only tests）。
+- [ ] **优先回溯近 14 天已有 CI 失败记录**进行归类（caught regression vs change detector）；若仓库缺少可回溯的历史失败日志，再开启连续 **2 周** 记录（log test failures for two weeks）。记录方法：优先用 CI 平台运行历史（如 `gh run list --status failure` + 失败 job 日志）；平台保留期不足 14 天时，在测试 job 末尾 `if: failure()` 步骤把失败测试名、commit、时间追加到构建制品或仓库外的日志存储。严禁在缺乏失败证据时凭直觉直接删测试。
+- [ ] 识别只充当“改动探测器”的脆弱测试（change-detector-only tests），把待删清单（测试名、失败证据、判定理由）交用户确认，获批后再在独立小 PR 中删除。
 - [ ] 将这类反模式明确写入仓库 `AGENTS.md` 禁止列表（ban patterns in `AGENTS.md`）。
 - [ ] **绝对保护名单（严禁删除）**：`auth`（鉴权认证）、`privacy`（隐私保护）、`migration`（数据迁移）、`concurrency`（并发正确性）相关测试。
 

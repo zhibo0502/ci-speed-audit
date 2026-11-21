@@ -10,9 +10,9 @@
 
 | 核心能力 | GitHub Actions（默认） | GitLab CI | Buildkite | CircleCI |
 | :--- | :--- | :--- | :--- | :--- |
-| **合入前全量兜底（铁律 1）** | Merge Queue（触发全量套件） | Merge Trains（`CI_PIPELINE_SOURCE == "merge_request_event"` 且 train 跑全量） | 主干合并队列 / 保护分支合入前全量 pipeline | 主干合并前全量 workflow + 分支保护必过项 |
+| **合入前全量兜底（铁律 1）** | Merge Queue（仅组织仓库可用，触发全量套件）；个人账号仓库：分支保护必需检查 + 「Require branches to be up to date」，且 PR 必须跑全量、禁止筛选 | Merge Trains（`CI_PIPELINE_SOURCE == "merge_request_event"` 且 train 跑全量） | 主干合并队列 / 保护分支合入前全量 pipeline | 主干合并前全量 workflow + 分支保护必过项 |
 | **取消被取代运行（Waiting）** | `concurrency.cancel-in-progress: true` | `workflow:auto_cancel` + job 级 `interruptible: true` | Pipeline 设置 `cancel_running_branch_builds: true` | Project 设置 Auto-cancel redundant workflows |
-| **低排队温机池（Waiting）** | 默认 Blacksmith runners / warm machines（备选 BuildJet / Namespace / Depot / 自建温机） | 自管常驻 GitLab Runner（autoscaler 预留 warm 槽位） | Elastic CI Stack（warm pool / 常驻 agent） | 预留资源类 / 自建常驻 runner |
+| **低排队温机池（Waiting）** | 已有自建 runner 或以省钱为目标：给自建常驻 runner 加实例；否则默认 Blacksmith runners / warm machines（备选 BuildJet / Namespace / Depot） | 自管常驻 GitLab Runner（autoscaler 预留 warm 槽位） | Elastic CI Stack（warm pool / 常驻 agent） | 预留资源类 / 自建常驻 runner |
 | **`main` 预热 PR 缓存（Setup）** | `actions/cache`（分支缓存回落 `main` `restore-keys`） | `cache:fallback_keys` 回落 `main` 缓存键 | S3/GCS 缓存插件按 `main` 分支键兜底 | `restore_cache` 多前缀键回落 `main` |
 | **Blobless Clone（Setup）** | `actions/checkout` 配 `filter: blob:none` | `GIT_CLONE_FLAGS: "--filter=blob:none"` | `BUILDKITE_GIT_CLONE_FLAGS="--filter=blob:none"` | 自定义 checkout 步骤执行 `git clone --filter=blob:none` |
 | **拉取历史运行数据（审计）** | `gh api` / Actions Runs & Jobs API | GitLab Pipelines & Jobs REST/GraphQL API | Buildkite Builds & Jobs REST API | CircleCI Insights & Pipelines API |
